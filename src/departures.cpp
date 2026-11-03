@@ -305,3 +305,140 @@ bool OebbSource::fetch(std::vector<Departure>& out) {
   }
   return ok;
 }
+
+// ---------------------------------------------------------------------------
+//  MVG (www.mvg.de/api/bgw-pt/v3)
+// ---------------------------------------------------------------------------
+static const char* kMvgApi = "https://www.mvg.de/api/bgw-pt/v3";
+static const int   kMvgMaxLimit = 30;  // upper bound on one departures request
+
+// Transliterate UTF-8 to the ASCII the GFX fonts can draw, German-style
+// ("Fürstenried" -> "Fuerstenried", "Großhadern" -> "Grosshadern").
+static String germanAscii(const String& s) {
+  String out;
+  out.reserve(s.length() + 4);
+  for (size_t i = 0; i < s.length(); i++) {
+    uint8_t c = (uint8_t)s[i];
+    if (c < 0x80) { out += (char)c; continue; }
+    if ((c & 0xE0) != 0xC0 || i + 1 >= s.length()) continue;  // only 2-byte chars
+    long cp = ((c & 0x1F) << 6) | ((uint8_t)s[++i] & 0x3F);
+    switch (cp) {
+      case 0xC4: out += "Ae"; break;
+      case 0xD6: out += "Oe"; break;
+      case 0xDC: out += "Ue"; break;
+      case 0xE4: out += "ae"; break;
+      case 0xF6: out += "oe"; break;
+      case 0xFC: out += "ue"; break;
+      default:   out += cpToAscii(cp);
+    }
+  }
+  return out;
+}
+
+MvgSource::MvgSource(const String& stopNames, const String& lineFilter,
+                     bool ubahnOnly, int maxPerStop)
+  : lineFilter_(lineFilter), ubahnOnly_(ubahnOnly), maxPerStop_(maxPerStop) {
+  forEachId(stopNames, [&](const String& nm) {
+    stops_.push_back({nm, "", ""});
+  });
+}
+
+bool MvgSource::lineAllowed(const String& line) const {
+  if (lineFilter_.length() == 0) return true;
+  bool allowed = false;
+  forEachId(lineFilter_, [&](const String& l) {
+    if (l.equalsIgnoreCase(line)) allowed = true;
+  });
+  return allowed;
+}
+
+// Take the first STATION hit — the search also returns addresses and POIs — and
+// when only U-Bahn is wanted, the first one a U-Bahn actually serves.
+bool MvgSource::resolve(Stop& stop) {
+  JsonDocument filter;
+  JsonObject f = filter.add<JsonObject>();
+  f["type"] = true;
+  f["name"] = true;
+  f["globalId"] = true;
+  f["transportTypes"] = true;
+
+  JsonDocument doc;
+  String url = String(kMvgApi) + "/locations?query=" + urlEncode(stop.query);
+  if (!httpGetJson(url, doc, &filter)) return false;
+
+  for (JsonObject loc : doc.as<JsonArray>()) {
+    if (strcmp(loc["type"] | "", "STATION") != 0) continue;
+    if (ubahnOnly_) {
+      bool hasUbahn = false;
+      for (const char* t : loc["transportTypes"].as<JsonArray>())
+        if (t && strcmp(t, "UBAHN") == 0) hasUbahn = true;
+      if (!hasUbahn) continue;
+    }
+    stop.globalId = loc["globalId"].as<String>();
+    stop.name = germanAscii(loc["name"].as<String>());
+    Serial.printf("[MVG] '%s' -> %s (%s)\n", stop.query.c_str(),
+                  stop.globalId.c_str(), stop.name.c_str());
+    return stop.globalId.length() > 0;
+  }
+  Serial.printf("[MVG] no station found for '%s'\n", stop.query.c_str());
+  return false;
+}
+
+bool MvgSource::fetch(std::vector<Departure>& out) {
+  time_t now = time(nullptr);
+  if (now < kClockSyncedEpoch) {  // countdown needs a real clock
+    Serial.println("[MVG] clock not synced, skipping");
+    return false;
+  }
+  if (stops_.empty()) return false;
+
+  // A line filter drops rows client-side, so ask for more to still fill the board.
+  int limit = maxPerStop_ * (lineFilter_.length() ? 4 : 1);
+  if (limit > kMvgMaxLimit) limit = kMvgMaxLimit;
+
+  // Keep only the fields we use -> small RAM footprint.
+  JsonDocument filter;
+  JsonObject f = filter.add<JsonObject>();
+  f["realtime"] = true;
+  f["realtimeDepartureTime"] = true;
+  f["delayInMinutes"] = true;
+  f["label"] = true;
+  f["destination"] = true;
+  f["cancelled"] = true;
+
+  const bool showStation = stops_.size() > 1;
+  bool ok = true;
+  for (Stop& stop : stops_) {
+    if (stop.globalId.length() == 0 && !resolve(stop)) { ok = false; continue; }
+
+    String url = String(kMvgApi) + "/departures?globalId=" + urlEncode(stop.globalId) +
+                 "&limit=" + String(limit);
+    if (ubahnOnly_) url += "&transportTypes=UBAHN";
+
+    JsonDocument doc;
+    if (!httpGetJson(url, doc, &filter)) { ok = false; continue; }
+
+    int added = 0;
+    for (JsonObject d : doc.as<JsonArray>()) {
+      if (added >= maxPerStop_) break;
+      if (d["cancelled"] | false) continue;
+
+      String line = d["label"].as<String>();
+      if (!lineAllowed(line)) continue;
+
+      // Epoch milliseconds: needs 64 bits, and already includes any delay.
+      time_t dep = (time_t)(d["realtimeDepartureTime"].as<long long>() / 1000);
+      if (dep <= 0) continue;
+      int secs = (int)(dep - now);
+      if (secs < -30) continue;  // left already; a small margin hides clock skew
+      int cd = secs < 0 ? 0 : secs / 60;
+
+      out.push_back({line, germanAscii(d["destination"].as<String>()), cd,
+                     RowStyle::LineBadge, "", "", (d["delayInMinutes"] | 0) > 0,
+                     d["realtime"] | false, showStation ? stop.name : String("")});
+      added++;
+    }
+    Serial.printf("[MVG] %s: %d departures\n", stop.name.c_str(), added);
+  }
+  return ok;
+}

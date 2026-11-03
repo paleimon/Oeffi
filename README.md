@@ -3,12 +3,16 @@
 A real-time public-transport departure board for the **ESP32 "Cheap Yellow Display" (CYD)**.
 It shows the next departures for your stops on the 2.8" screen and refreshes automatically.
 
+> **Fork of [maikischa/Oeffi](https://github.com/maikischa/Oeffi)** with an MVG (Munich) provider and
+> support for ILI9341-based CYD boards. Not affiliated with MVG or SWM.
+
 Built-in data providers:
 
+- **MVG** — Munich U-Bahn, bus, tram and S-Bahn (line badges, minutes, live vs. timetable)
 - **Wiener Linien** — Vienna trams, U-Bahn and buses (countdown in minutes)
 - **ÖBB** — Austrian railways / S-Bahn (planned + real-time clock times, ÖBB board look)
 
-Both run at once and are merged into one board, sorted by soonest departure. Adding
+All enabled providers run at once and are merged into one board, sorted by soonest departure. Adding
 another transit provider is a small, well-defined job — see [Adding a provider](#adding-a-provider).
 
 Everything is configured **on the device** through a phone-friendly web portal — WiFi
@@ -28,7 +32,7 @@ no config file and no recompiling to change any of it.
 |---|---|
 | Board | ESP32 "Cheap Yellow Display" (CYD), 2.8" — sold as `ESP32-2432S028` / `185-ESP32-2.8-HuangBan` |
 | MCU | ESP32-WROOM (dual-core, WiFi) |
-| Display | 2.8" 240×320 SPI TFT, **ST7789** controller (some listings say ILI9341 — it is ST7789) |
+| Display | 2.8" 240×320 SPI TFT, **ILI9341** controller (batches differ: upstream targets ST7789, see [Troubleshooting](#troubleshooting)) |
 | Touch | XPT2046 resistive — drives the on-screen settings menu |
 
 No wiring required — the display, MCU and USB-serial are all on the one board. Just a USB cable.
@@ -92,7 +96,7 @@ three subpages — saving on any of them reboots the board to apply the change:
 | Page | What you can change |
 |---|---|
 | **`/wifi`** | Switch to a different network, or **forget** the current one (reboots back into setup mode). |
-| **`/providers`** | Enable/disable Wiener Linien and ÖBB, set their stops/stations, line and direction filters. Editing any field auto-enables that provider. |
+| **`/providers`** | Enable/disable MVG, Wiener Linien and ÖBB, set their stops/stations, line and direction filters. Editing any field auto-enables that provider. |
 | **`/system`** | How many departures to show at once (3–4 looks best) and the refresh interval (seconds). |
 
 Don't remember the address? **Tap the screen** — a gear icon appears in the corner; tap it for a
@@ -157,6 +161,10 @@ boot → load settings → WiFi credentials? ──no──► WiFi Setup screen
 
 ### Data sources
 
+- **MVG** (Munich) uses the unofficial JSON API behind mvg.de — no API key, no proxy. It is
+  undocumented and can change without notice; MVG tolerates moderate private, non-commercial
+  use only (see its imprint), so the refresh interval has a 30 s minimum. Station names are
+  resolved via `/locations`; amber minutes are live data, grey minutes are the timetable.
 - **Wiener Linien** uses the official OGD real-time monitor
   (`wienerlinien.at/ogd_realtime/monitor`), which returns a `countdown` directly.
 - **ÖBB** uses ÖBB's own Scotty "liveticker" station board (`fahrplan.oebb.at`) — no API key,
@@ -200,8 +208,10 @@ CLAUDE.md               Architecture notes & gotchas for contributors
 - **Board shows "No departures"** — no provider is configured yet (or both got disabled);
   open `http://oeffi.local/providers` and add at least one stop.
 - **Display upside-down** — change `tft.setRotation(1)` to `3` in `displayInit()` (`display.cpp`).
-- **Wrong colours / mirrored** — this CYD variant is ST7789 with BGR order; the flags in
-  `platformio.ini` (`ST7789_DRIVER`, `TFT_RGB_ORDER=TFT_BGR`, `TFT_INVERSION_OFF`) handle that.
+- **White screen** — your CYD probably has an ST7789 panel: use `-DST7789_DRIVER` instead of
+  `-DILI9341_2_DRIVER` in `platformio.ini`.
+- **Wrong colours / mirrored** — check the panel flags in
+  `platformio.ini` (`TFT_RGB_ORDER=TFT_BGR`, `TFT_INVERSION_OFF`).
 - **`IO 21 is not set as GPIO` at boot** — harmless TFT_eSPI backlight message.
 - **ÖBB rows missing** — the Scotty backend occasionally errors; the board degrades gracefully
   to the other providers and recovers on the next refresh.

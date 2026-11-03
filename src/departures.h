@@ -16,6 +16,7 @@
 enum class RowStyle : uint8_t {
   Countdown,  // amber-on-black, minutes remaining (Wiener Linien)
   Clock,      // blue board, planned/realtime clock times (ÖBB)
+  LineBadge,  // coloured line badge + minutes, optional station line (MVG)
 };
 
 // One upcoming departure, normalised across all providers.
@@ -27,6 +28,8 @@ struct Departure {
   String   planned;    // planned "HH:MM" (clock styles; "" otherwise)
   String   actual;     // realtime "HH:MM" (== planned when on time)
   bool     delayed;    // actual later than planned
+  bool     realtime;   // countdown is live data, not the timetable (MVG)
+  String   station;    // departure station; "" when only one is configured (MVG)
 };
 
 // Abstract data source. Each provider appends its departures to `out`.
@@ -73,6 +76,30 @@ private:
   bool   resolved_;
   std::vector<long> stopEvas_;
   long   destEva_;
+};
+
+// MVG (Munich) via the unofficial JSON API behind mvg.de — no key, no proxy.
+// Station names are resolved to globalIds on first use; a name that fails is
+// retried on the next fetch. The API gives epoch times, so countdown is computed
+// from the synced clock. Undocumented: MVG tolerates moderate private use only.
+class MvgSource : public DepartureSource {
+public:
+  MvgSource(const String& stopNames, const String& lineFilter, bool ubahnOnly,
+            int maxPerStop);
+  bool fetch(std::vector<Departure>& out) override;
+  const char* name() const override { return "MVG"; }
+private:
+  struct Stop {
+    String query;     // what the user typed
+    String name;      // official name, once resolved
+    String globalId;  // e.g. "de:09162:2"; "" until resolved
+  };
+  bool resolve(Stop& stop);
+  bool lineAllowed(const String& line) const;
+  std::vector<Stop> stops_;
+  String lineFilter_;
+  bool   ubahnOnly_;
+  int    maxPerStop_;
 };
 
 // Shared helpers (departures.cpp).

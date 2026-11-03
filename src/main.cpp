@@ -19,6 +19,9 @@
 static std::vector<Departure> g_departures;
 static std::vector<DepartureSource*> g_sources;
 static uint32_t g_lastFetch = 0;
+static uint32_t g_lastAged = 0;      // when g_departures' countdowns were last true
+static bool     g_fetchFailed = false;
+static const uint32_t kProvisioningRetryMs = 5UL * 60UL * 1000UL;
 
 // On-board touch UI: the board, plus a transient gear "tool" icon that opens a
 // settings/QR screen. The icon auto-hides kToolTimeoutMs after it appears.
@@ -36,6 +39,10 @@ static const uint32_t kToolTimeoutMs = 5000;
 //  effect on the next reboot without reflashing.
 // ---------------------------------------------------------------------------
 void registerSources() {
+  if (mvgEnabled() && mvgStops().length()) {
+    static MvgSource mvg(mvgStops(), mvgLines(), mvgUbahnOnly(), mvgMaxPerStop());
+    g_sources.push_back(&mvg);
+  }
   if (wlEnabled()) {
     static WienerLinienSource wl(rblIds(), lineFilter());
     g_sources.push_back(&wl);
@@ -83,9 +90,15 @@ void enterProvisioning(const String& reason = "") {
                 reason.length() ? " -> " : "", reason.c_str());
   displaySetupScreen("Oeffi-Setup", "192.168.4.1", reason);
   portalStartSetupAP();
+  const bool canRetry = wifiConfigured();
+  uint32_t lastClient = millis();
   for (;;) {
     portalHandle();
     delay(5);
+    // After a power cut the board boots faster than the router. With WiFi already
+    // configured, keep retrying instead of waiting here for someone to notice.
+    if (WiFi.softAPgetStationNum() > 0) lastClient = millis();
+    if (canRetry && millis() - lastClient >= kProvisioningRetryMs) ESP.restart();
   }
 }
 
@@ -120,15 +133,38 @@ String providersUrl() {
 // ---------------------------------------------------------------------------
 //  Fetch from all sources, merge, sort soonest-first
 // ---------------------------------------------------------------------------
+// During an outage keep showing what we have, counting it down so it stays
+// honest; rows drop off once they have left.
+void ageDepartures() {
+  const int mins = (millis() - g_lastAged) / 60000UL;
+  if (mins <= 0) return;
+  g_lastAged += mins * 60000UL;
+  for (Departure& d : g_departures) d.countdown -= mins;
+  g_departures.erase(std::remove_if(g_departures.begin(), g_departures.end(),
+                                    [](const Departure& d) { return d.countdown < 0; }),
+                     g_departures.end());
+}
+
 void fetchAll() {
-  if (WiFi.status() != WL_CONNECTED) {
-    if (!connectWiFi()) return;  // transient drop; retry next refresh
+  if (WiFi.status() != WL_CONNECTED && !connectWiFi()) {  // retry next refresh
+    g_fetchFailed = true;
+    ageDepartures();
+    return;
   }
 
+  bool failed = false;
   std::vector<Departure> merged;
   for (DepartureSource* s : g_sources) {
-    if (!s->fetch(merged))
+    if (!s->fetch(merged)) {
       Serial.printf("[%s] fetch failed\n", s->name());
+      failed = true;
+    }
+  }
+  g_fetchFailed = failed;
+
+  if (failed && merged.empty()) {
+    ageDepartures();
+    return;
   }
 
   std::sort(merged.begin(), merged.end(),
@@ -137,7 +173,19 @@ void fetchAll() {
             });
 
   g_departures = merged;
+  g_lastAged = millis();
   Serial.printf("[board] %d departures total\n", (int)merged.size());
+}
+
+// The QR "add a stop" screen is for an unconfigured board only. With stops set,
+// an empty list means an outage or simply the U-Bahn's night break.
+void showBoard() {
+  if (g_departures.empty() && !g_sources.empty()) {
+    if (g_fetchFailed) displayStatus("Keine Verbindung zur MVG", StatusKind::Warn);
+    else               displayStatus("Keine Abfahrten");
+    return;
+  }
+  displayBoard(g_departures, providersUrl());
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +218,7 @@ void setup() {
   delay(3000);
   fetchAll();
   g_lastFetch = millis();
-  displayBoard(g_departures, providersUrl());
+  showBoard();
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +233,7 @@ void handleUi() {
   if (g_uiState == STATE_SETTINGS) {
     if (tapped) {                     // any tap dismisses -> back to the board
       g_uiState = STATE_BOARD;
-      displayBoard(g_departures, providersUrl());
+      showBoard();
     }
     return;
   }
@@ -193,7 +241,7 @@ void handleUi() {
   // STATE_BOARD: expire the tool icon after the timeout (redraw to erase it).
   if (g_toolVisible && millis() - g_toolShownAt >= kToolTimeoutMs) {
     g_toolVisible = false;
-    displayBoard(g_departures, providersUrl());
+    showBoard();
   }
 
   if (!tapped) return;
@@ -216,7 +264,7 @@ void loop() {
       millis() - g_lastFetch >= (uint32_t)refreshIntervalMs()) {
     fetchAll();
     g_lastFetch = millis();
-    displayBoard(g_departures, providersUrl());
+    showBoard();
     g_toolVisible = false;  // board redrawn -> any visible tool icon is gone
   }
   delay(50);

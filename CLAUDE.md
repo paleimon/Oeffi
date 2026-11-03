@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-ESP32 firmware for a public-transport departure board ("Öffi") running on the **Cheap Yellow Display** (CYD) — a 2.8" ESP32-WROOM all-in-one board sold as "185-ESP32-2.8-HuangBan". Pulls realtime departures from **multiple providers** (Wiener Linien + ÖBB) and shows them on a landscape amber-on-black board. PlatformIO + Arduino + TFT_eSPI + ArduinoJson.
+ESP32 firmware for a public-transport departure board ("Öffi") running on the **Cheap Yellow Display** (CYD) — a 2.8" ESP32-WROOM all-in-one board sold as "185-ESP32-2.8-HuangBan". Pulls realtime departures from **multiple providers** (MVG München, Wiener Linien, ÖBB) and shows them on a landscape amber-on-black board. PlatformIO + Arduino + TFT_eSPI + ArduinoJson.
 
 Inspired by `coppermilk/wiener_linien_esp32_monitor` (built for the LILYGO T-Display-S3). The display is a clean rewrite for the CYD's 320×240 landscape ST7789 screen.
 
@@ -36,6 +36,7 @@ Implemented sources ([src/departures.cpp](src/departures.cpp)):
 |---|---|---|
 | `WienerLinienSource` | `wienerlinien.at/ogd_realtime/monitor?...&rbl=<id>` | direct `countdown` field; deep JSON needs an ArduinoJson **filter** + `NestingLimit(20)` |
 | `OebbSource` | ÖBB Scotty liveticker: `fahrplan.oebb.at/bin/stboard.exe/dn?L=vs_scotty.vs_liveticker` | computed from the board's local `da`+`ti`/`rt.dlt` via `mktime()`, so **needs NTP + Vienna TZ** |
+| `MvgSource` | unofficial `www.mvg.de/api/bgw-pt/v3` (`/locations?query=`, `/departures?globalId=`) | computed from epoch-ms `realtimeDepartureTime` via the NTP clock |
 
 **ÖBB via the Scotty liveticker** (not `transport.rest`): chosen after the public `v6.oebb.transport.rest` instance proved unreliable (its `oebb-hafas` lib fell out of sync with ÖBB's HAFAS backend → 502s). The liveticker is ÖBB's own production backend — no API key, no proxy. Details:
 - **Station names → evaIds** are resolved at first fetch via `…/bin/ajax-getstop.exe/dn?S=<name>` (`resolveEva()`), cached. So `OEBB_STOPS`/`OEBB_DESTINATION` are human station names, not IDs.
@@ -67,7 +68,7 @@ Implemented sources ([src/departures.cpp](src/departures.cpp)):
 **There is no config file — every user setting lives in NVS and is web-portal-editable.** The settings store (`settings.*`) is the single source of truth; accessors carry sensible hardcoded defaults:
 - **Providers** (`http://oeffi.local/providers`): enabled flags, stop IDs/names, line/direction filters, max-per-stop. Disabled/empty by default → a freshly flashed board shows "No departures" until you add a stop. Saving reboots so `registerSources()` re-reads them.
 - **WiFi** (`/wifi`): `wifiSsid()`/`wifiPass()` default to `""`; the user provisions via the captive portal on first boot. To wipe: the portal's "Forget WiFi" button (`clearWifi()`), or re-flash with NVS erase.
-- **System** (`/system`): `maxRows()` (default 4) and `refreshIntervalMs()` (default 30 000) — the former build-time `MAX_ROWS`/`REFRESH_INTERVAL_MS` macros, now NVS-backed.
+- **System** (`/system`): `maxRows()` (default 4) and `refreshIntervalMs()` (default 60 000, minimum 30 s — MVG only tolerates moderate use) — the former build-time `MAX_ROWS`/`REFRESH_INTERVAL_MS` macros, now NVS-backed.
 
 The only compile-time config left is the hardware/display `build_flags` in `platformio.ini`. To wipe all stored settings back to first-boot state: `pio run --target erase` then re-flash.
 
@@ -115,7 +116,7 @@ pio run --target erase && pio run --target upload
 | RGB LED B | 17 (active LOW) |
 | LDR | 34 |
 
-Display driver: **ST7789** (despite the "ILI9341" listing/silkscreen — confirmed via the user's working ESPHome config: `model: ST7789V`, `color_order: bgr`, `invert_colors: false`). 240 × 320 native. Touch controller: **XPT2046** (resistive) — driven on its own **HSPI** bus (the touch pins are separate from the display's VSPI pins), see `touch.*`. `touchGetTap()` maps each press to landscape screen pixels (raw→px calibration constants in `touch.cpp`, tune from the `[touch] raw=…` serial log). `main.cpp`'s `handleUi()` uses taps to drive a small on-board UI: a tap surfaces a gear "tool" icon (bottom-right) for ~5 s; tapping it opens a settings screen with a QR to the config page (`http://<sta-ip>/`), which any tap dismisses back to the board.
+Display driver: **ILI9341** on this fork (`ILI9341_2_DRIVER`; upstream used an ST7789 board, so CYD batches differ — a wrong driver shows a plain white screen). 240 × 320 native. Touch controller: **XPT2046** (resistive) — driven on its own **HSPI** bus (the touch pins are separate from the display's VSPI pins), see `touch.*`. `touchGetTap()` maps each press to landscape screen pixels (raw→px calibration constants in `touch.cpp`, tune from the `[touch] raw=…` serial log). `main.cpp`'s `handleUi()` uses taps to drive a small on-board UI: a tap surfaces a gear "tool" icon (bottom-right) for ~5 s; tapping it opens a settings screen with a QR to the config page (`http://<sta-ip>/`), which any tap dismisses back to the board.
 
 ## TFT_eSPI configuration
 

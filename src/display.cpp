@@ -31,7 +31,7 @@ static std::vector<String> wrapText(const String& s, int maxW, int maxLines) {
   String rest = s;
   rest.trim();
   while (rest.length() && (int)lines.size() < maxLines) {
-    if (tft.textWidth(rest) <= maxW) { lines.push_back(rest); break; }
+    if (tft.textWidth(rest) <= maxW) { lines.push_back(rest); rest = ""; break; }
 
     int cut = -1;  // longest word-boundary prefix that fits
     for (int i = 0; i < (int)rest.length(); i++) {
@@ -134,10 +134,73 @@ static void renderClock(const Departure& d, int y, int rowH) {
                 TFT_WHITE, COL_OEBB_BG, 18);
 }
 
+// `s` cut to `maxW` px in the current font. Cuts mid-word on purpose: one line has
+// no second chance, and "Putzbrunn, M.-Hasl..." says more than "Putzbrunn,...".
+static String fitLine(String s, int maxW) {
+  if (tft.textWidth(s) <= maxW) return s;
+  while (s.length() > 1 && tft.textWidth(s + "...") > maxW) s.remove(s.length() - 1);
+  return s + "...";
+}
+
+// Badge colour for a Munich line label; anything but U1-U8 gets a neutral grey.
+static uint16_t lineColor(const String& line) {
+  if (line.length() == 2 && line[0] == 'U') {
+    switch (line[1]) {
+      case '1': return tft.color565(0x3C, 0x72, 0x33);  // green
+      case '2': return tft.color565(0xC4, 0x02, 0x2E);  // red
+      case '3': return tft.color565(0xED, 0x67, 0x20);  // orange
+      case '4': return tft.color565(0x00, 0xA9, 0x84);  // turquoise
+      case '5': return tft.color565(0xBC, 0x7A, 0x00);  // brown
+      case '6': return tft.color565(0x00, 0x65, 0xAE);  // blue
+      case '7': return tft.color565(0x3C, 0x72, 0x33);  // U1/U2 booster
+      case '8': return tft.color565(0xC4, 0x02, 0x2E);  // U2/U3 booster
+    }
+  }
+  return tft.color565(0x50, 0x58, 0x68);
+}
+
+// RowStyle::LineBadge — coloured line badge | destination (+ station) | minutes.
+// Amber minutes are live data, grey minutes are only the timetable.
+static void renderLineBadge(const Departure& d, int y, int rowH) {
+  const int W = tft.width();
+  const int cy = y + rowH / 2;
+  const int padX = 8, badgeW = 46, gap = 8, cdColW = 54;
+  const int badgeH = std::min(rowH - 8, 34);
+  const uint16_t badgeCol = lineColor(d.line);
+
+  tft.fillRoundRect(padX, cy - badgeH / 2, badgeW, badgeH, 6, badgeCol);
+  tft.setTextColor(TFT_WHITE, badgeCol);
+  tft.setFreeFont(&FreeSansBold12pt7b);
+  if (tft.textWidth(d.line) > badgeW - 6) tft.setFreeFont(&FreeSansBold9pt7b);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString(d.line, padX + badgeW / 2, cy);
+
+  tft.setTextColor(d.realtime ? COL_AMBER : COL_PLAN, COL_BG);
+  tft.setFreeFont(&FreeSansBold18pt7b);
+  tft.setTextDatum(MR_DATUM);
+  tft.drawString(String(d.countdown), W - padX, cy);
+
+  const int dirX = padX + badgeW + gap;
+  const int dirW = W - dirX - cdColW - padX;
+  if (d.station.length() == 0 || rowH < 44) {  // no room for a second text line
+    drawDirection(d.towards, dirX, dirW, cy, TFT_WHITE, COL_BG, 20);
+    return;
+  }
+  tft.setFreeFont(&FreeSansBold9pt7b);
+  if (tft.textWidth(d.towards) > dirW) tft.setTextFont(2);  // smaller beats cut off
+  tft.setTextColor(TFT_WHITE, COL_BG);
+  tft.setTextDatum(ML_DATUM);
+  tft.drawString(fitLine(d.towards, dirW), dirX, cy - 10);
+  tft.setTextFont(2);
+  tft.setTextColor(COL_PLAN, COL_BG);
+  tft.drawString(fitLine(d.station, dirW), dirX, cy + 11);
+}
+
 // Indexed by RowStyle. Keep this in the same order as the enum.
 static const RowRenderer kRenderers[] = {
   renderCountdown,  // RowStyle::Countdown
   renderClock,      // RowStyle::Clock
+  renderLineBadge,  // RowStyle::LineBadge
 };
 
 // ---------------------------------------------------------------------------

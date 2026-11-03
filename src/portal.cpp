@@ -240,6 +240,19 @@ static void handleProvidersRoot() {
   String page = FPSTR(kHead);
   page += "<h1>Providers</h1>"
           "<form method=POST action=/providers>"
+          "<fieldset><legend><input type=checkbox name=mvg_enabled value=1" +
+            String(mvgEnabled() ? " checked" : "") + "> MVG (M&uuml;nchen)</legend>"
+          "<label>Stations (comma-separated)</label>"
+          "<input name=mvg_stops value='" + esc(mvgStops()) +
+            "' placeholder='Marienplatz, M&uuml;nchner Freiheit'>"
+          "<label><input type=checkbox name=mvg_ubahn value=1" +
+            String(mvgUbahnOnly() ? " checked" : "") + "> U-Bahn only</label>"
+          "<label>Line filter (optional, comma-separated)</label>"
+          "<input name=mvg_lines value='" + esc(mvgLines()) + "' placeholder='U3,U6'>"
+          "<label>Max departures per station</label>"
+          "<input name=mvg_max type=number min=1 max=20 value='" +
+            String(mvgMaxPerStop()) + "'>"
+          "</fieldset>"
           "<fieldset><legend><input type=checkbox name=wl_enabled value=1" +
             String(wlEnabled() ? " checked" : "") + "> Wiener Linien</legend>"
           "<label>Stop IDs (RBL, comma-separated — see "
@@ -282,6 +295,12 @@ static void handleProvidersRoot() {
 }
 
 static void handleProvidersSave() {
+  int mvgMax = server.arg("mvg_max").toInt();
+  if (mvgMax < 1) mvgMax = 1;
+  if (mvgMax > 20) mvgMax = 20;
+  setMvgConfig(server.hasArg("mvg_enabled"), server.arg("mvg_stops"),
+               server.arg("mvg_lines"), server.hasArg("mvg_ubahn"), mvgMax);
+
   setWlConfig(server.hasArg("wl_enabled"), server.arg("rbl_ids"),
               server.arg("line_filter"));
 
@@ -308,7 +327,7 @@ static void handleSystemRoot() {
           "<input name=max_rows type=number min=1 max=8 value='" +
             String(maxRows()) + "'>"
           "<label>Refresh interval (seconds)</label>"
-          "<input name=refresh_s type=number min=10 max=3600 value='" +
+          "<input name=refresh_s type=number min=30 max=3600 value='" +
             String(refreshIntervalMs() / 1000) + "'>"
           "<label>Screen orientation</label>"
           "<select name=rotation>"
@@ -329,7 +348,7 @@ static void handleSystemSave() {
   if (rows > 8) rows = 8;
 
   int secs = server.arg("refresh_s").toInt();
-  if (secs < 10) secs = 10;
+  if (secs < 30) secs = 30;
   if (secs > 3600) secs = 3600;
 
   int rot = server.arg("rotation").toInt();

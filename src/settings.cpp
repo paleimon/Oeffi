@@ -9,6 +9,11 @@ static Preferences g_prefs;
 // NVS keys are limited to 15 chars.
 static const char* kKeyWifiSsid = "wifi_ssid";
 static const char* kKeyWifiPass = "wifi_pass";
+static const char* kKeyMvgEnabled = "mvg_enabled";
+static const char* kKeyMvgStops = "mvg_stops";
+static const char* kKeyMvgLines = "mvg_lines";
+static const char* kKeyMvgUbahn = "mvg_ubahn";
+static const char* kKeyMvgMax = "mvg_max";
 static const char* kKeyWlEnabled = "wl_enabled";
 static const char* kKeyRblIds = "rbl_ids";
 static const char* kKeyLineFilter = "line_filter";
@@ -66,6 +71,21 @@ void clearWifi() {
 // --- Provider config ----------------------------------------------------------
 // Configured entirely on-device via the portal; disabled/empty until the
 // user saves a config at /providers.
+bool mvgEnabled()    { return settingBool(kKeyMvgEnabled, false); }
+String mvgStops()    { return settingStr(kKeyMvgStops, ""); }
+String mvgLines()    { return settingStr(kKeyMvgLines, ""); }
+bool mvgUbahnOnly()  { return settingBool(kKeyMvgUbahn, true); }
+int mvgMaxPerStop()  { return settingInt(kKeyMvgMax, 6); }
+
+void setMvgConfig(bool enabled, const String& stops, const String& lines,
+                  bool ubahnOnly, int maxPerStop) {
+  settingSetBool(kKeyMvgEnabled, enabled);
+  settingSetStr(kKeyMvgStops, stops);
+  settingSetStr(kKeyMvgLines, lines);
+  settingSetBool(kKeyMvgUbahn, ubahnOnly);
+  settingSetInt(kKeyMvgMax, maxPerStop);
+}
+
 bool wlEnabled()    { return settingBool(kKeyWlEnabled, false); }
 String rblIds()     { return settingStr(kKeyRblIds, ""); }
 String lineFilter() { return settingStr(kKeyLineFilter, ""); }
@@ -93,7 +113,7 @@ void setOebbConfig(bool enabled, const String& stops, bool trainsOnly,
 
 // --- System settings ---------------------------------------------------------
 int maxRows()           { return settingInt(kKeyMaxRows, 4); }
-int refreshIntervalMs() { return settingInt(kKeyRefreshMs, 30000); }
+int refreshIntervalMs() { return settingInt(kKeyRefreshMs, 60000); }  // MVG: stay moderate
 int displayRotation()   { return settingInt(kKeyRotation, 3); }
 
 void setSystemConfig(int maxRows, int refreshIntervalMs, int displayRotation) {

@@ -24,6 +24,14 @@ void   clearWifi();                                        // wipe creds (-> set
 // Web-portal-editable only (disabled/empty until saved — no config.h
 // fallback). Applied on the next boot (registerSources() reads these), so
 // saving reboots the device.
+bool   mvgEnabled();
+String mvgStops();
+String mvgLines();
+bool   mvgUbahnOnly();
+int    mvgMaxPerStop();
+void   setMvgConfig(bool enabled, const String& stops, const String& lines,
+                    bool ubahnOnly, int maxPerStop);
+
 bool   wlEnabled();
 String rblIds();
 String lineFilter();
