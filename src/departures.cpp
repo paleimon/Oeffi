@@ -433,8 +433,14 @@ bool MvgSource::fetch(std::vector<Departure>& out) {
       if (secs < -30) continue;  // left already; a small margin hides clock skew
       int cd = secs < 0 ? 0 : secs / 60;
 
+      // Clock time for departures far out (night timetable), where minutes get long.
+      struct tm lt;
+      localtime_r(&dep, &lt);
+      char clock[6];
+      strftime(clock, sizeof(clock), "%H:%M", &lt);
+
       out.push_back({line, germanAscii(d["destination"].as<String>()), cd,
-                     RowStyle::LineBadge, "", "", (d["delayInMinutes"] | 0) > 0,
+                     RowStyle::LineBadge, "", clock, (d["delayInMinutes"] | 0) > 0,
                      d["realtime"] | false, showStation ? stop.name : String("")});
       added++;
     }

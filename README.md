@@ -97,7 +97,7 @@ three subpages — saving on any of them reboots the board to apply the change:
 |---|---|
 | **`/wifi`** | Switch to a different network, or **forget** the current one (reboots back into setup mode). |
 | **`/providers`** | Enable/disable MVG, Wiener Linien and ÖBB, set their stops/stations, line and direction filters. Editing any field auto-enables that provider. |
-| **`/system`** | How many departures to show at once (3–4 looks best) and the refresh interval (seconds). |
+| **`/system`** | How many departures to show at once (3–4 looks best), the refresh interval (seconds), and hiding departures leaving too soon to catch (default: under 2 min). |
 
 Don't remember the address? **Tap the screen** — a gear icon appears in the corner; tap it for a
 QR code straight to the config page.

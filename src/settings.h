@@ -51,7 +51,9 @@ void   setOebbConfig(bool enabled, const String& stops, bool trainsOnly,
 int    maxRows();                 // departures shown on screen at once
 int    refreshIntervalMs();       // how often to re-fetch (milliseconds)
 int    displayRotation();         // TFT_eSPI rotation: 1 = landscape, 3 = 180° flip
-void   setSystemConfig(int maxRows, int refreshIntervalMs, int displayRotation);
+int    minMinutes();              // hide departures leaving sooner than this
+void   setSystemConfig(int maxRows, int refreshIntervalMs, int displayRotation,
+                       int minMinutes);
 
 // --- Generic typed accessors (foundation for later settings) ----------------
 // Read a stored value, falling back to `def` (the hardcoded default the typed

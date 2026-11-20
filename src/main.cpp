@@ -133,16 +133,22 @@ String providersUrl() {
 // ---------------------------------------------------------------------------
 //  Fetch from all sources, merge, sort soonest-first
 // ---------------------------------------------------------------------------
+// Drop departures too close to catch (minMinutes(), set at /system).
+void dropUncatchable(std::vector<Departure>& deps) {
+  const int minMins = minMinutes();
+  deps.erase(std::remove_if(deps.begin(), deps.end(),
+                            [minMins](const Departure& d) { return d.countdown < minMins; }),
+             deps.end());
+}
+
 // During an outage keep showing what we have, counting it down so it stays
-// honest; rows drop off once they have left.
+// honest; rows drop off once they are too close to catch.
 void ageDepartures() {
   const int mins = (millis() - g_lastAged) / 60000UL;
   if (mins <= 0) return;
   g_lastAged += mins * 60000UL;
   for (Departure& d : g_departures) d.countdown -= mins;
-  g_departures.erase(std::remove_if(g_departures.begin(), g_departures.end(),
-                                    [](const Departure& d) { return d.countdown < 0; }),
-                     g_departures.end());
+  dropUncatchable(g_departures);
 }
 
 void fetchAll() {
@@ -167,6 +173,7 @@ void fetchAll() {
     return;
   }
 
+  dropUncatchable(merged);
   std::sort(merged.begin(), merged.end(),
             [](const Departure& a, const Departure& b) {
               return a.countdown < b.countdown;

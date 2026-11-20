@@ -329,6 +329,9 @@ static void handleSystemRoot() {
           "<label>Refresh interval (seconds)</label>"
           "<input name=refresh_s type=number min=30 max=3600 value='" +
             String(refreshIntervalMs() / 1000) + "'>"
+          "<label>Hide departures leaving in under (minutes; 0 = show all)</label>"
+          "<input name=min_minutes type=number min=0 max=30 value='" +
+            String(minMinutes()) + "'>"
           "<label>Screen orientation</label>"
           "<select name=rotation>"
           "<option value=1" + String(displayRotation() == 1 ? " selected" : "") +
@@ -354,7 +357,11 @@ static void handleSystemSave() {
   int rot = server.arg("rotation").toInt();
   if (rot != 1 && rot != 3) rot = 3;
 
-  setSystemConfig(rows, secs * 1000, rot);
+  int minMins = server.arg("min_minutes").toInt();  // empty/invalid -> 0 = show all
+  if (minMins < 0) minMins = 0;
+  if (minMins > 30) minMins = 30;
+
+  setSystemConfig(rows, secs * 1000, rot, minMins);
 
   server.send(200, "text/html", restartingPage(
       "Saved",

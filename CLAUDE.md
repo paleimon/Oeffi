@@ -68,7 +68,7 @@ Implemented sources ([src/departures.cpp](src/departures.cpp)):
 **There is no config file — every user setting lives in NVS and is web-portal-editable.** The settings store (`settings.*`) is the single source of truth; accessors carry sensible hardcoded defaults:
 - **Providers** (`http://oeffi.local/providers`): enabled flags, stop IDs/names, line/direction filters, max-per-stop. Disabled/empty by default → a freshly flashed board shows "No departures" until you add a stop. Saving reboots so `registerSources()` re-reads them.
 - **WiFi** (`/wifi`): `wifiSsid()`/`wifiPass()` default to `""`; the user provisions via the captive portal on first boot. To wipe: the portal's "Forget WiFi" button (`clearWifi()`), or re-flash with NVS erase.
-- **System** (`/system`): `maxRows()` (default 4) and `refreshIntervalMs()` (default 60 000, minimum 30 s — MVG only tolerates moderate use) — the former build-time `MAX_ROWS`/`REFRESH_INTERVAL_MS` macros, now NVS-backed.
+- **System** (`/system`): `maxRows()` (default 4) and `minMinutes()` (default 2: hide departures leaving sooner, applied in `main.cpp` to every provider) and `refreshIntervalMs()` (default 60 000, minimum 30 s — MVG only tolerates moderate use) — the former build-time `MAX_ROWS`/`REFRESH_INTERVAL_MS` macros, now NVS-backed.
 
 The only compile-time config left is the hardware/display `build_flags` in `platformio.ini`. To wipe all stored settings back to first-boot state: `pio run --target erase` then re-flash.
 

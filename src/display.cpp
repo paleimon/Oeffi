@@ -175,13 +175,17 @@ static void renderLineBadge(const Departure& d, int y, int rowH) {
   tft.setTextDatum(MC_DATUM);
   tft.drawString(d.line, padX + badgeW / 2, cy);
 
+  // Minutes; an hour or more out, the clock time instead ("124" would not fit).
+  const bool asClock = d.countdown >= 60 && d.actual.length();
+  const String when = asClock ? d.actual : String(d.countdown);
   tft.setTextColor(d.realtime ? COL_AMBER : COL_PLAN, COL_BG);
-  tft.setFreeFont(&FreeSansBold18pt7b);
+  tft.setFreeFont(asClock ? &FreeSansBold12pt7b : &FreeSansBold18pt7b);
   tft.setTextDatum(MR_DATUM);
-  tft.drawString(String(d.countdown), W - padX, cy);
+  tft.drawString(when, W - padX, cy);
+  const int whenW = std::max(cdColW - gap, (int)tft.textWidth(when));
 
   const int dirX = padX + badgeW + gap;
-  const int dirW = W - dirX - cdColW - padX;
+  const int dirW = W - dirX - whenW - gap - padX;
   if (d.station.length() == 0 || rowH < 44) {  // no room for a second text line
     drawDirection(d.towards, dirX, dirW, cy, TFT_WHITE, COL_BG, 20);
     return;
